@@ -1,14 +1,15 @@
 # FloraLab - Empowering FL with SLURM-Ready Interoperability
 
 <p align="center">
-  <a href="#license"><img alt="license: proprietary" src="https://img.shields.io/badge/license-Proprietary-red.svg"/></a>
-  <a href="#"><img alt="status: active" src="https://img.shields.io/badge/status-active-brightgreen.svg"/></a>
-</p>
-
-<p align="center">
  	<img src="./logo/logo.png" alt="FloraLab logo" width="240" />
 </p>
 
+<p align="left">
+  <a href="#license"><img alt="license: proprietary" src="https://img.shields.io/badge/license-Proprietary-red.svg"/></a>
+  <a href="#"><img alt="status: active" src="https://img.shields.io/badge/status-active-brightgreen.svg"/></a>
+  <a href="#"><img alt="platform: slurm" src="https://img.shields.io/badge/platform-slurm-purple.svg"/></a>
+  <a href="#"><img alt="python: >=3.8>" src="https://img.shields.io/badge/python-%3E=3.8-blue.svg"/></a>
+</p>
 FloraLab is a small multi-language project combining a Python CLI for managing Flower-AI federated learning deployments on SLURM clusters and Go-based tooling under `florago/`.
 
 This repository contains utilities to initialize, run, and stop Flower-AI stacks on SLURM, plus helper tooling for packaging and deployment.
