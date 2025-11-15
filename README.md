@@ -1,6 +1,6 @@
 # FloraLab
 
-![FloraLab logo](./logo/logo.svg)
+![FloraLab logo](./logo/logo.png)
 
 FloraLab is a small multi-language project combining a Python CLI for managing Flower-AI federated learning deployments on SLURM clusters and Go-based tooling under `florago/`.
 
