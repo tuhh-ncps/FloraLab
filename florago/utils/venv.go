@@ -102,6 +102,38 @@ func (v *VenvManager) InstallPackages(packages []string) error {
 	return nil
 }
 
+// InstallPackagesWithFlags installs multiple Python packages with custom pip flags
+func (v *VenvManager) InstallPackagesWithFlags(packages []string, flags []string, envVars []string) error {
+	if v.venvPath == "" {
+		return fmt.Errorf("virtual environment path not set")
+	}
+
+	pipPath := filepath.Join(v.venvPath, "bin", "pip")
+
+	v.logger.Info("Installing packages: %v", packages)
+	if len(flags) > 0 {
+		v.logger.Info("Using flags: %v", flags)
+	}
+	if len(envVars) > 0 {
+		v.logger.Info("Using environment: %v", envVars)
+	}
+
+	args := append([]string{"install"}, flags...)
+	args = append(args, packages...)
+
+	cmd := exec.Command(pipPath, args...)
+	if len(envVars) > 0 {
+		cmd.Env = append(os.Environ(), envVars...)
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to install packages: %w\nOutput: %s", err, string(output))
+	}
+
+	v.logger.Success("Installed packages: %v", packages)
+	return nil
+}
+
 // UpgradePip upgrades pip in the virtual environment
 func (v *VenvManager) UpgradePip() error {
 	if v.venvPath == "" {

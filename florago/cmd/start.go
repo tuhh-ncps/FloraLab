@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -114,14 +115,30 @@ The server runs in the foreground and can be stopped with Ctrl+C.`,
 			logger.Success("SLURM cluster detected")
 		}
 
+		// Logging middleware
+		loggingMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				logger.Info("=== Incoming Request ===")
+				logger.Info("Method: %s", r.Method)
+				logger.Info("Path: %s", r.URL.Path)
+				logger.Info("Remote: %s", r.RemoteAddr)
+				logger.Info("User-Agent: %s", r.Header.Get("User-Agent"))
+
+				// Call the actual handler
+				next(w, r)
+
+				logger.Info("=== Request Completed ===")
+			}
+		}
+
 		// Setup HTTP routes - 3 main endpoints + coordination endpoints
-		http.HandleFunc("/health", handleHealth)
-		http.HandleFunc("/api/monitoring", makeMonitoringHandler(slurmClient, logger))
-		http.HandleFunc("/api/spin", makeSpinHandler(slurmClient, logger))
+		http.HandleFunc("/health", loggingMiddleware(handleHealth))
+		http.HandleFunc("/api/monitoring", loggingMiddleware(makeMonitoringHandler(slurmClient, logger)))
+		http.HandleFunc("/api/spin", loggingMiddleware(makeSpinHandler(slurmClient, logger)))
 
 		// Internal coordination endpoints
-		http.HandleFunc("/api/flower/server", makeFlowerServerHandler(logger))
-		http.HandleFunc("/api/flower/client", makeFlowerClientHandler(logger))
+		http.HandleFunc("/api/flower/server", loggingMiddleware(makeFlowerServerHandler(logger)))
+		http.HandleFunc("/api/flower/client", loggingMiddleware(makeFlowerClientHandler(logger)))
 
 		addr := fmt.Sprintf("%s:%s", serverHost, serverPort)
 		logger.Success("Server ready at http://%s", addr)
@@ -275,7 +292,37 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 
 	// Create SLURM job script for distributed Flower stack
 	logger.Info("Creating SLURM job script...")
-	jobScript, err := createFlowerStackScript(req, serverHost, serverPort)
+
+	// Get actual IP address of this machine (login node) for compute nodes to connect back
+	// If serverHost is 0.0.0.0, we need to find the actual IP
+	apiHostForNodes := serverHost
+	if serverHost == "0.0.0.0" || serverHost == "" {
+		// In cluster environment, use hostname which should resolve to LAN IP
+		hostname, err := os.Hostname()
+		if err != nil {
+			logger.Error("Could not get hostname: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(SpinResponse{
+				Success: false,
+				Message: fmt.Sprintf("Failed to get hostname: %v", err),
+			})
+			return
+		}
+
+		// Resolve hostname to IP address
+		addrs, err := net.LookupHost(hostname)
+		if err != nil || len(addrs) == 0 {
+			logger.Warning("Could not resolve hostname to IP, using hostname: %s", hostname)
+			apiHostForNodes = hostname
+		} else {
+			// Use the first resolved IP
+			apiHostForNodes = addrs[0]
+			logger.Info("Resolved login node %s to IP: %s", hostname, apiHostForNodes)
+		}
+	}
+
+	jobScript, err := createFlowerStackScript(req, apiHostForNodes, serverPort)
 	if err != nil {
 		logger.Error("Failed to create job script: %v", err)
 		w.Header().Set("Content-Type", "application/json")

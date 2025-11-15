@@ -418,12 +418,13 @@ def run(
         raise typer.Exit(1)
 
     # Step 5: Create SSH tunnel
-    typer.echo(f"\n🔌 Step 5/8: Creating SSH tunnel (localhost:{ssh_port} -> {login_node}:8080)...")
-    typer.echo(f"   Command: ssh -N -L {ssh_port}:localhost:8080 {login_node}")
+    typer.echo("\n🔌 Step 5/8: Creating SSH tunnels...")
+    typer.echo(f"   Port 8080 (API): localhost:{ssh_port} -> {login_node}:8080")
+    typer.echo(f"   Port 9093 (Control API): localhost:9093 -> {login_node}:9093")
     tunnel_process = None
     try:
         tunnel_process = subprocess.Popen(
-            ["ssh", "-N", "-L", f"{ssh_port}:localhost:8080", login_node],
+            ["ssh", "-N", "-L", f"{ssh_port}:localhost:8080", "-L", "9093:localhost:9093", login_node],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -436,7 +437,7 @@ def run(
             typer.secho(f"✗ SSH tunnel failed to establish: {stderr_output}", fg=typer.colors.RED)
             raise typer.Exit(1)
 
-        typer.echo("✓ SSH tunnel established")
+        typer.echo("✓ SSH tunnels established")
     except Exception as e:
         typer.secho(f"✗ Failed to create SSH tunnel: {e}", fg=typer.colors.RED)
         if tunnel_process:
@@ -558,7 +559,7 @@ def run(
         # Run flwr in the project directory
         typer.echo("\n   Starting flwr run...")
         result = subprocess.run(
-            ["flwr", "run", "floralab", "."],
+            ["flwr", "run", ".", "floralab", "--stream"],
             cwd=project_dir,
             check=True,
         )

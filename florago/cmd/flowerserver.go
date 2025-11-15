@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -63,7 +67,8 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 		superlinkCmd := exec.Command(
 			superlinkBin,
 			"--insecure",
-			fmt.Sprintf("--grpc-bidi-address=%s:%d", ip, fleetAPIPort),
+			"--isolation",
+			"process",
 		)
 
 		// Redirect superlink output to log file
@@ -92,7 +97,7 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 			superexecBin,
 			"--insecure",
 			"--plugin-type=serverapp",
-			fmt.Sprintf("--grpc-address=%s:%d", ip, serverAppIOAPIPort),
+			fmt.Sprintf("--appio-api-address=%s:%d", ip, serverAppIOAPIPort),
 		)
 
 		// Redirect superexec output to log file
@@ -180,14 +185,21 @@ func init() {
 }
 
 func getLocalIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+	// In cluster environment, get hostname and resolve to LAN IP
+	hostname, err := os.Hostname()
 	if err != nil {
 		return "127.0.0.1"
 	}
-	defer conn.Close()
 
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	return localAddr.IP.String()
+	// Try to resolve hostname to IP
+	addrs, err := net.LookupHost(hostname)
+	if err != nil || len(addrs) == 0 {
+		// If resolution fails, return hostname itself (SLURM nodes can resolve it)
+		return hostname
+	}
+
+	// Return first resolved IP address
+	return addrs[0]
 }
 
 func getEnvInt(key string, defaultVal int) int {
@@ -200,8 +212,31 @@ func getEnvInt(key string, defaultVal int) int {
 }
 
 func registerServerNode(apiServerURL string, node *utils.FlowerServerNode) error {
-	// This will be implemented to call the API endpoint
-	// For now, just log
-	fmt.Printf("Would register server node to %s\n", apiServerURL)
+	// Prepare registration payload
+	payload := map[string]interface{}{
+		"ip":                     node.IP,
+		"server_app_io_api_port": node.ServerAppIOAPIPort,
+		"fleet_api_port":         node.FleetAPIPort,
+		"control_api_port":       node.ControlAPIPort,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal registration data: %w", err)
+	}
+
+	// Send POST request to register server node
+	url := fmt.Sprintf("%s/api/flower/server", apiServerURL)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to send registration request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("registration failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	return nil
 }

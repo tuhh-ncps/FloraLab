@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -69,6 +70,10 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 			supernodeBin,
 			"--insecure",
 			fmt.Sprintf("--superlink=%s:%d", serverNode.IP, serverNode.FleetAPIPort),
+			"--clientappio-api-address",
+			"0.0.0.0:9094",
+			"--isolation",
+			"process",
 		)
 
 		// Redirect supernode output to log file
@@ -97,7 +102,7 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 			superexecBin,
 			"--insecure",
 			"--plugin-type=clientapp",
-			fmt.Sprintf("--grpc-address=%s:%d", ip, clientAppIOAPIPort),
+			fmt.Sprintf("--appio-api-address=%s:%d", ip, clientAppIOAPIPort),
 		)
 
 		// Redirect superexec output to log file
@@ -204,8 +209,29 @@ func waitForServerNode(apiServerURL string, timeout time.Duration) (*utils.Flowe
 }
 
 func registerClientNode(apiServerURL string, node *utils.FlowerClientNode) error {
-	// This will be implemented to call the API endpoint
-	// For now, just log
-	fmt.Printf("Would register client node to %s\n", apiServerURL)
+	// Prepare registration payload
+	payload := map[string]interface{}{
+		"ip":   node.IP,
+		"port": node.ClientAppIOAPIPort,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal registration data: %w", err)
+	}
+
+	// Send POST request to register client node
+	url := fmt.Sprintf("%s/api/flower/client", apiServerURL)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to send registration request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("registration failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
 	return nil
 }

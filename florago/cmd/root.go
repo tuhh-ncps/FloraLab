@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"florago/utils"
@@ -151,6 +152,91 @@ All FloraGo data is stored in $HOME/.florago to ensure compatibility with SLURM 
 			}
 		}
 
+		// Install OpenSSL 3 locally if not already present
+		// This is needed because cryptography package requires OpenSSL 3.x
+		// but many HPC systems only have OpenSSL 1.1.1
+		logger.Info("Checking for OpenSSL 3...")
+		opensslDir := filepath.Join(floragoHome, "openssl3")
+
+		// Check if OpenSSL 3 is already installed
+		opensslLib := filepath.Join(opensslDir, "lib", "libssl.so.3")
+		if _, err := os.Stat(opensslLib); err == nil {
+			logger.Success("OpenSSL 3 already installed: %s", opensslDir)
+		} else {
+			logger.Info("OpenSSL 3 not found, installing locally (this will take 5-10 minutes)...")
+
+			// Download and build OpenSSL 3
+			tmpDir := filepath.Join(floragoHome, "tmp")
+			os.MkdirAll(tmpDir, 0755)
+
+			opensslTarball := filepath.Join(tmpDir, "openssl-3.2.1.tar.gz")
+			opensslSrcDir := filepath.Join(tmpDir, "openssl-3.2.1")
+
+			// Download OpenSSL 3.2.1
+			logger.Info("Downloading OpenSSL 3.2.1...")
+			downloadCmd := exec.Command("wget", "-O", opensslTarball, "https://www.openssl.org/source/openssl-3.2.1.tar.gz")
+			downloadCmd.Dir = tmpDir
+			if output, err := downloadCmd.CombinedOutput(); err != nil {
+				logger.Fatal("Failed to download OpenSSL: %v\n%s", err, output)
+			}
+
+			// Extract tarball
+			logger.Info("Extracting OpenSSL...")
+			extractCmd := exec.Command("tar", "xzf", opensslTarball)
+			extractCmd.Dir = tmpDir
+			if output, err := extractCmd.CombinedOutput(); err != nil {
+				logger.Fatal("Failed to extract OpenSSL: %v\n%s", err, output)
+			}
+
+			// Configure OpenSSL
+			logger.Info("Configuring OpenSSL (this may take a few minutes)...")
+			configCmd := exec.Command("./config",
+				fmt.Sprintf("--prefix=%s", opensslDir),
+				fmt.Sprintf("--openssldir=%s", opensslDir))
+			configCmd.Dir = opensslSrcDir
+			if output, err := configCmd.CombinedOutput(); err != nil {
+				logger.Fatal("Failed to configure OpenSSL: %v\n%s", err, output)
+			}
+
+			// Build OpenSSL
+			logger.Info("Building OpenSSL (this will take 5-10 minutes)...")
+			makeCmd := exec.Command("make", "-j8")
+			makeCmd.Dir = opensslSrcDir
+			if output, err := makeCmd.CombinedOutput(); err != nil {
+				logger.Fatal("Failed to build OpenSSL: %v\n%s", err, output)
+			}
+
+			// Install OpenSSL
+			logger.Info("Installing OpenSSL to %s...", opensslDir)
+			installCmd := exec.Command("make", "install")
+			installCmd.Dir = opensslSrcDir
+			if output, err := installCmd.CombinedOutput(); err != nil {
+				logger.Fatal("Failed to install OpenSSL: %v\n%s", err, output)
+			}
+
+			// Clean up
+			logger.Info("Cleaning up temporary files...")
+			os.RemoveAll(tmpDir)
+
+			logger.Success("OpenSSL 3 installed successfully")
+		}
+
+		// First install cryptography with OpenSSL 3
+		// Set environment variables to use the local OpenSSL 3
+		logger.Info("Installing cryptography with OpenSSL 3...")
+		cryptoPackages := []string{"cryptography"}
+		cryptoFlags := []string{"--no-binary", "cryptography", "--no-cache-dir"}
+		cryptoEnvVars := []string{
+			fmt.Sprintf("LD_LIBRARY_PATH=%s/lib:$LD_LIBRARY_PATH", opensslDir),
+			fmt.Sprintf("LIBRARY_PATH=%s/lib:$LIBRARY_PATH", opensslDir),
+			fmt.Sprintf("CPATH=%s/include:$CPATH", opensslDir),
+		}
+		if err := venvManager.InstallPackagesWithFlags(cryptoPackages, cryptoFlags, cryptoEnvVars); err != nil {
+			logger.Fatal("Failed to install cryptography: %v", err)
+		}
+
+		// Then install flwr and ray (which will use the already-installed cryptography)
+		logger.Info("Installing flwr[simulation] and ray...")
 		packages := []string{"flwr[simulation]", "ray"}
 		if err := venvManager.InstallPackages(packages); err != nil {
 			logger.Fatal("Failed to install packages: %v", err)
