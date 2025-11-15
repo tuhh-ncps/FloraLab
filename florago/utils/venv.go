@@ -168,6 +168,20 @@ func (v *VenvManager) VerifyVenv(venvPath string) bool {
 	return true
 }
 
+// IsPackageInstalled checks if a Python package is installed in the venv
+func (v *VenvManager) IsPackageInstalled(packageName string) bool {
+	if v.venvPath == "" {
+		return false
+	}
+
+	pipPath := filepath.Join(v.venvPath, "bin", "pip")
+	cmd := exec.Command(pipPath, "show", packageName)
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
 // GetFloraGoVenvDir returns the FloraGo venv directory ($HOME/.florago/venv)
 func GetFloraGoVenvDir() (string, error) {
 	floragoHome, err := GetFloraGoHome()
