@@ -1,7 +1,12 @@
-# FloraLab
+# FloraLab - Empowering FL with SLURM-Ready Interoperability
 
 <p align="center">
-	<img src="./logo/logo.png" alt="FloraLab logo" width="120" />
+  <a href="#license"><img alt="license: proprietary" src="https://img.shields.io/badge/license-Proprietary-red.svg"/></a>
+  <a href="#"><img alt="status: active" src="https://img.shields.io/badge/status-active-brightgreen.svg"/></a>
+</p>
+
+<p align="center">
+ 	<img src="./logo/logo.png" alt="FloraLab logo" width="240" />
 </p>
 
 FloraLab is a small multi-language project combining a Python CLI for managing Flower-AI federated learning deployments on SLURM clusters and Go-based tooling under `florago/`.
@@ -14,6 +19,19 @@ This repository contains utilities to initialize, run, and stop Flower-AI stacks
 - Integration between the Python CLI (`FloraLab`) and Go utilities (`florago`)
 - SSH tunnel management for secure communication
 - Simple workflow commands: `init`, `run`, `stop`
+
+## Why use FloraLab
+
+Deploying Flower-AI on SLURM clusters introduces several real-world pain points. FloraLab was built to address them:
+
+- Environment consistency across nodes: Varying Python/OS environments on compute nodes break reproducibility. FloraLab automates packaging and environment setup so the same runtime is available across all nodes.
+- Binary and dependency distribution: Shipping Python packages and native binaries to compute nodes can be tedious. FloraLab handles copying or packaging `florago` and dependencies to the cluster automatically.
+- Orchestration across SLURM jobs: Launching a Flower server and multiple clients across SLURM jobs and keeping them coordinated is error-prone. FloraLab simplifies orchestration (submit, monitor, cancel) and keeps client/server lifecycle in sync.
+- Network connectivity & SSH tunnels: Exposing server endpoints from within SLURM nodes to the user machine requires SSH tunneling and port management. FloraLab automates tunnel setup and port forwarding so the Flower server is reachable locally.
+- Debugging & logging across nodes: Collecting logs and debugging distributed runs across many nodes is hard. FloraLab centralizes logs and exposes convenient debugging helpers for faster diagnosis.
+- Reproducibility and convenience: Small differences in launch flags, environment variables, or resource requests lead to subtle failures. FloraLab provides a consistent CLI workflow (`init`, `run`, `stop`) and configuration stored in `pyproject.toml` to make runs repeatable.
+
+These pain points are why FloraLab focuses on deployment automation, reproducibility, and developer ergonomics for federated learning on SLURM.
 
 ## Prerequisites
 
