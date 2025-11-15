@@ -1,93 +1,90 @@
 # FloraLab
 
-FloraLab is a Python CLI tool for managing Flower-AI federated learning deployments on SLURM clusters.
+![FloraLab logo](./logo/logo.svg)
 
-## Features
+FloraLab is a small multi-language project combining a Python CLI for managing Flower-AI federated learning deployments on SLURM clusters and Go-based tooling under `florago/`.
 
-- 🚀 Automated deployment of Flower-AI stacks on SLURM
-- 🔧 Seamless integration with `florago` backend
-- 📦 Bundled binaries - no manual setup required
-- 🌐 SSH tunnel management for secure communication
-- ⚡ Simple 3-command workflow: init, run, stop
+This repository contains utilities to initialize, run, and stop Flower-AI stacks on SLURM, plus helper tooling for packaging and deployment.
 
-## Installation
+## Key features
+
+- Automated deployment of Flower-AI stacks on SLURM
+- Integration between the Python CLI (`FloraLab`) and Go utilities (`florago`)
+- SSH tunnel management for secure communication
+- Simple workflow commands: `init`, `run`, `stop`
+
+## Prerequisites
+
+- macOS or Linux (instructions below use zsh)
+- Go 1.20+ (for `florago`)
+- Python 3.8+ and pip
+- SSH access to a SLURM cluster (login node credentials)
+
+## Quick start
+
+### 1) Build or run Go tooling (optional)
+
+If you need the Go binaries or the `florago` helper utilities:
 
 ```bash
-pip install floralab
+cd florago
+# Use the Makefile if present
+make build
+# or build manually
+go build -o ./bin/florago ./...
 ```
 
-Or with uv:
+You can also run specific commands directly with `go run`, for example:
 
 ```bash
-uv pip install floralab
+cd florago
+go run ./cmd/flowerserver.go
 ```
 
-## Quick Start
+### 2) Python environment & install
 
-### 1. Initialize Configuration
+From the repository root:
 
 ```bash
+# create and activate a venv (zsh)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# install the package in editable mode
+pip install -e .
+```
+
+### 3) Use the CLI
+
+Examples (from repo root):
+
+```bash
+# initialize config in pyproject.toml
 floralab-cli init your-slurm-login-node.edu
-```
 
-This adds Flower-AI configuration to your `pyproject.toml`.
-
-### 2. Run Federated Learning Job
-
-```bash
+# run a federated learning job using 3 client nodes
 floralab-cli run --nodes 3
-```
 
-This will:
-- Copy florago to the SLURM cluster
-- Initialize the environment
-- Start the API server
-- Spin up a Flower stack (1 server + 3 clients)
-- Run your federated learning job with `flwr run`
-
-### 3. Stop the Stack
-
-```bash
+# stop a running stack
 floralab-cli stop
 ```
 
-Tears down the Flower stack and cancels the SLURM job.
+See `FloraLab/cli.py` for more CLI options and usage details.
 
-## Commands
+## Repository layout
 
-### `floralab-cli init <login-node>`
-
-Initialize floralab configuration in your project's `pyproject.toml`.
-
-**Arguments:**
-- `login-node` - Hostname of your SLURM login node
-
-**Options:**
-- `--dir, -d` - Project directory (default: current directory)
-
-### `floralab-cli run`
-
-Run a federated learning job on the SLURM cluster.
-
-**Options:**
-- `--nodes, -n` - Number of client nodes (default: 2)
-- `--partition, -p` - SLURM partition
-- `--memory, -m` - Memory per node (e.g., "4G")
-- `--time, -t` - Time limit (e.g., "01:00:00")
-- `--dir, -d` - Project directory (default: current directory)
-- `--ssh-port` - Local port for SSH tunnel (default: 8080)
-
-### `floralab-cli stop`
-
-Stop the running Flower stack.
-
-**Options:**
-- `--dir, -d` - Project directory (default: current directory)
-- `--ssh-port` - Local port for SSH tunnel (default: 8080)
+- `pyproject.toml` — Python packaging config.
+- `florago/` — Go code, Makefile, and utilities.
+	- `cmd/` — Go command entrypoints (e.g., `flowerserver.go`, `flowerclient.go`).
+	- `utils/` — Go helpers used across the Go toolchain.
+- `FloraLab/` — Python package and CLI (`cli.py`).
+- `logo/` — Project logo (SVG) referenced in this README.
 
 ## Configuration
 
-FloraLab adds the following to your `pyproject.toml`:
+The CLI stores minimal configuration in `pyproject.toml` under a `[tool.floralab]` table when you run `floralab-cli init` (see `FloraLab/cli.py` for exact keys).
+
+Example (added by `init`):
 
 ```toml
 [tool.floralab]
@@ -99,14 +96,43 @@ insecure = true
 root-certificates = null
 ```
 
-The `address` field is automatically updated when you run `floralab-cli run` to point to the actual Flower server.
+## Development workflows
 
-## Requirements
+- Run Python tests (from repo root, after activating venv):
 
-- Python 3.12+
-- SSH access to a SLURM cluster
-- Flower AI installed (`flwr` command available)
+```bash
+pytest
+```
+
+- Format/lint: use `black`/`ruff` (Python) and `gofmt`/`golangci-lint` (Go).
+
+## Contributing
+
+1. Fork the repo and create a branch.
+2. Run tests and linters locally.
+3. Open a PR describing the change.
+
+Please include tests for new features and follow the repository style.
 
 ## License
 
-MIT
+This project is proprietary. A `LICENSE` file is included in the repository root that describes the terms under which the software may be used.
+
+Short summary:
+
+- Copyright (c) 2025 `trinh-tnp` — All Rights Reserved.
+- No rights to use, copy, modify, distribute, sublicense, or create derivative works are granted except under a separate, written license agreement with the copyright holder.
+
+Please see the full text in `LICENSE` for details and contact information.
+
+## Contact
+
+Maintainer: `trinh-tnp` (repo owner)
+
+---
+
+If you'd like, I can also:
+
+- Expand the CLI command docs with actual flags parsed by `FloraLab/cli.py`.
+- Add a `LICENSE` file (please tell me which license to use).
+- Add a CI workflow that builds the Go tools and runs Python tests on push.
