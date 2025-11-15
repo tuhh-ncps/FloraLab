@@ -156,40 +156,18 @@ All FloraGo data is stored in $HOME/.florago to ensure compatibility with SLURM 
 			logger.Fatal("Failed to install packages: %v", err)
 		}
 
-		// Install Caddy proxy
-		logger.Info("\n🌐 Installing Caddy proxy...")
-
+		// Skip Caddy installation - it will be copied by floralab-cli
+		logger.Info("\n🌐 Preparing Caddy configuration...")
 		caddyInstaller := utils.NewCaddyInstaller(logger)
-		if caddyInstaller.VerifyCaddy() {
-			logger.Success("Caddy already installed")
-			caddyPath, _ := caddyInstaller.GetCaddyPath()
-			logger.Info("  Binary: %s", caddyPath)
-		} else {
-			if err := caddyInstaller.InstallCaddy(); err != nil {
-				logger.Fatal("Failed to install Caddy: %v", err)
-			}
-		}
 
 		// Create default Caddyfile
 		if err := caddyInstaller.CreateDefaultCaddyfile(); err != nil {
 			logger.Fatal("Failed to create Caddyfile: %v", err)
 		}
+		logger.Info("  Caddyfile created (Caddy binary will be provided by floralab-cli)")
 
-		// Install Delve debugger
-		logger.Info("\n🐛 Installing Delve debugger...")
-
-		debuggerManager := utils.NewDebuggerManager(logger)
-		if debuggerManager.IsDelveInstalled() {
-			logger.Success("Delve already installed")
-			dlvPath := debuggerManager.GetDelveBinaryPath()
-			logger.Info("  Binary: %s", dlvPath)
-		} else {
-			if err := debuggerManager.InstallDelve(); err != nil {
-				logger.Warning("Failed to install Delve: %v", err)
-				logger.Info("  Delve is optional and used for debugging")
-				logger.Info("  You can install it manually later if needed")
-			}
-		}
+		// Skip Delve installation - it will be copied by floralab-cli
+		logger.Info("\n🐛 Delve debugger will be provided by floralab-cli")
 
 		// Create config file with venv info
 		config := utils.DefaultConfig("florago")

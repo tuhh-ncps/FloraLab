@@ -48,8 +48,10 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 		clientAppIOAPIPort := getEnvInt("FLOWER_CLIENT_APP_IO_API_PORT", 9094)
 
 		logger.Info("Starting flower-supernode...")
+		homeDir, _ := os.UserHomeDir()
+		supernodeBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-supernode", homeDir)
 		supernodeCmd := exec.Command(
-			"/Users/qnguyen/.florago/venv/flowerai-env/bin/flower-supernode",
+			supernodeBin,
 			"--insecure",
 			fmt.Sprintf("--superlink=%s:%d", serverNode.IP, serverNode.FleetAPIPort),
 		)
@@ -64,8 +66,9 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 
 		// Start superexec (clientapp)
 		logger.Info("Starting flower-superexec (clientapp)...")
+		superexecBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-superexec", homeDir)
 		superexecCmd := exec.Command(
-			"/Users/qnguyen/.florago/venv/flowerai-env/bin/flower-superexec",
+			superexecBin,
 			"--insecure",
 			"--plugin-type=clientapp",
 			fmt.Sprintf("--grpc-address=%s:%d", ip, clientAppIOAPIPort),

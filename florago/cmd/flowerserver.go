@@ -39,8 +39,10 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 
 		// Start superlink
 		logger.Info("Starting flower-superlink...")
+		homeDir, _ := os.UserHomeDir()
+		superlinkBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-superlink", homeDir)
 		superlinkCmd := exec.Command(
-			"/Users/qnguyen/.florago/venv/flowerai-env/bin/flower-superlink",
+			superlinkBin,
 			"--insecure",
 			fmt.Sprintf("--grpc-bidi-address=%s:%d", ip, fleetAPIPort),
 		)
@@ -55,8 +57,9 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 
 		// Start superexec (serverapp)
 		logger.Info("Starting flower-superexec (serverapp)...")
+		superexecBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-superexec", homeDir)
 		superexecCmd := exec.Command(
-			"/Users/qnguyen/.florago/venv/flowerai-env/bin/flower-superexec",
+			superexecBin,
 			"--insecure",
 			"--plugin-type=serverapp",
 			fmt.Sprintf("--grpc-address=%s:%d", ip, serverAppIOAPIPort),

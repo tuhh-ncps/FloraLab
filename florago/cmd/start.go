@@ -88,6 +88,24 @@ The server runs in the foreground and can be stopped with Ctrl+C.`,
 		// Initialize SLURM client
 		slurmClient := utils.NewSlurmClient(logger)
 
+		// Initialize and start Caddy
+		logger.Info("Starting Caddy reverse proxy...")
+		caddyInstaller := utils.NewCaddyInstaller(logger)
+
+		// Ensure Caddy is installed
+		if !caddyInstaller.VerifyCaddy() {
+			logger.Warning("Caddy not found - reverse proxy will not be available")
+			logger.Info("Run 'florago init' to install Caddy")
+		} else {
+			// Start Caddy in the background
+			if err := caddyInstaller.StartCaddy(); err != nil {
+				logger.Warning("Failed to start Caddy: %v", err)
+				logger.Warning("Reverse proxy will not be available")
+			} else {
+				logger.Success("Caddy reverse proxy started")
+			}
+		}
+
 		// Check if SLURM is available
 		err := slurmClient.CheckSlurmAvailability()
 		if err != nil {
@@ -204,8 +222,12 @@ func makeSpinHandler(slurmClient *utils.SlurmClient, logger *utils.Logger) http.
 
 // handleSpinUp starts a new Flower stack
 func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.SlurmClient, logger *utils.Logger) {
+	logger.Info("=== POST /api/spin - Spin up Flower stack ===")
+	logger.Info("Request from: %s", r.RemoteAddr)
+
 	var req SpinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("Failed to decode request body: %v", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(SpinResponse{
@@ -215,8 +237,15 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 		return
 	}
 
+	logger.Info("Request parameters:")
+	logger.Info("  NumNodes: %d", req.NumNodes)
+	logger.Info("  Partition: %s", req.Partition)
+	logger.Info("  Memory: %s", req.Memory)
+	logger.Info("  TimeLimit: %s", req.TimeLimit)
+
 	// Validate request
 	if req.NumNodes < 1 {
+		logger.Error("Invalid num_nodes: %d (must be >= 1)", req.NumNodes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(SpinResponse{
@@ -227,7 +256,9 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 	}
 
 	// Check if a stack is already running
+	logger.Info("Checking if stack is already running...")
 	if stackManager.IsStackRunning() {
+		logger.Warning("Stack already running - rejecting request")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(SpinResponse{
@@ -237,11 +268,13 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 		})
 		return
 	}
+	logger.Info("No existing stack - proceeding with spin up")
 
 	// Parse job ID first (we'll get it after sbatch, but initialize with empty for now)
 	// We'll update with real jobID after submission
 
 	// Create SLURM job script for distributed Flower stack
+	logger.Info("Creating SLURM job script...")
 	jobScript, err := createFlowerStackScript(req, serverHost, serverPort)
 	if err != nil {
 		logger.Error("Failed to create job script: %v", err)
@@ -254,8 +287,10 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 		stackManager.ClearState()
 		return
 	}
+	logger.Debug("Job script created successfully (%d bytes)", len(jobScript))
 
 	// Write script to temp file
+	logger.Info("Writing job script to temp file...")
 	floragoTmpDir, err := utils.GetFloraGoTempDir()
 	if err != nil {
 		logger.Error("Failed to get temp directory: %v", err)
@@ -270,6 +305,7 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 	}
 
 	scriptPath := filepath.Join(floragoTmpDir, fmt.Sprintf("flower_stack_%d.sh", time.Now().Unix()))
+	logger.Info("Script path: %s", scriptPath)
 	if err := utils.WriteFile(scriptPath, []byte(jobScript)); err != nil {
 		logger.Error("Failed to write job script: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -281,11 +317,15 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 		stackManager.ClearState()
 		return
 	}
+	logger.Success("Job script written to: %s", scriptPath)
 
 	// Submit job
+	logger.Info("Submitting job to SLURM...")
+	logger.Debug("Command: sbatch %s", scriptPath)
 	result, err := slurmClient.Sbatch(scriptPath)
 	if err != nil {
 		logger.Error("Failed to submit job: %v", err)
+		logger.Error("SLURM output: %s", result.Output)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(SpinResponse{
@@ -295,16 +335,20 @@ func handleSpinUp(w http.ResponseWriter, r *http.Request, slurmClient *utils.Slu
 		stackManager.ClearState()
 		return
 	}
+	logger.Info("SLURM sbatch output: %s", result.Output)
 
 	// Parse job ID
 	jobID := parseJobID(result.Output)
+	logger.Info("Parsed job ID: %s", jobID)
 	currentJobID = jobID
 
 	// Initialize stack with the job ID
+	logger.Info("Initializing stack manager with job ID: %s", jobID)
 	stackManager.InitializeStack(jobID, req.NumNodes)
 
 	logger.Success("Flower stack job submitted: %s", jobID)
-	logger.Info("Waiting for %d client nodes + 1 server node to register...", req.NumNodes)
+	logger.Info("Expected nodes: %d clients + 1 server = %d total", req.NumNodes, req.NumNodes+1)
+	logger.Info("Waiting for nodes to register...")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(SpinResponse{
@@ -373,13 +417,23 @@ func makeFlowerServerHandler(logger *utils.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
+			logger.Info("=== POST /api/flower/server - Server node registration ===")
+			logger.Info("Request from: %s", r.RemoteAddr)
+
 			// Server registration
 			var req ServerRegisterRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				logger.Error("Failed to decode server registration request: %v", err)
 				w.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
 				return
 			}
+
+			logger.Info("Server registration details:")
+			logger.Info("  IP: %s", req.IP)
+			logger.Info("  ServerAppIOAPIPort: %d", req.ServerAppIOAPIPort)
+			logger.Info("  FleetAPIPort: %d", req.FleetAPIPort)
+			logger.Info("  ControlAPIPort: %d", req.ControlAPIPort)
 
 			// Create FlowerServerNode struct
 			serverNode := &utils.FlowerServerNode{
@@ -392,6 +446,7 @@ func makeFlowerServerHandler(logger *utils.Logger) http.HandlerFunc {
 				StartedAt:          time.Now(),
 			}
 
+			logger.Info("Registering server node with stack manager...")
 			err := stackManager.RegisterServerNode(serverNode)
 			if err != nil {
 				logger.Error("Failed to register server: %v", err)
@@ -400,7 +455,21 @@ func makeFlowerServerHandler(logger *utils.Logger) http.HandlerFunc {
 				return
 			}
 
-			logger.Success("Server node registered: %s", req.IP)
+			logger.Success("Server node registered: %s (node ID: %s)", req.IP, serverNode.NodeID)
+			logger.Info("Current stack state: %d/%d nodes registered",
+				stackManager.GetState().CompletedNodes,
+				stackManager.GetState().ExpectedNodes)
+
+			// Configure Caddy reverse proxy for Control API
+			logger.Info("Configuring reverse proxy for Control API...")
+			caddyInstaller := utils.NewCaddyInstaller(logger)
+			if err := caddyInstaller.ConfigureFlowerControlProxy(req.ControlAPIPort, req.IP); err != nil {
+				logger.Warning("Failed to configure reverse proxy: %v", err)
+				logger.Warning("Control API will only be accessible directly at %s:%d", req.IP, req.ControlAPIPort)
+			} else {
+				logger.Success("Control API reverse proxy: 0.0.0.0:%d -> %s:%d", req.ControlAPIPort, req.IP, req.ControlAPIPort)
+			}
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 
@@ -431,12 +500,20 @@ func makeFlowerClientHandler(logger *utils.Logger) http.HandlerFunc {
 			return
 		}
 
+		logger.Info("=== POST /api/flower/client - Client node registration ===")
+		logger.Info("Request from: %s", r.RemoteAddr)
+
 		var req ClientRegisterRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			logger.Error("Failed to decode client registration request: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
 			return
 		}
+
+		logger.Info("Client registration details:")
+		logger.Info("  IP: %s", req.IP)
+		logger.Info("  Port: %d", req.Port)
 
 		// Create FlowerClientNode struct
 		clientNode := &utils.FlowerClientNode{
@@ -446,6 +523,7 @@ func makeFlowerClientHandler(logger *utils.Logger) http.HandlerFunc {
 			StartedAt: time.Now(),
 		}
 
+		logger.Info("Registering client node with stack manager...")
 		err := stackManager.RegisterClientNode(clientNode)
 		if err != nil {
 			logger.Error("Failed to register client: %v", err)
@@ -454,7 +532,11 @@ func makeFlowerClientHandler(logger *utils.Logger) http.HandlerFunc {
 			return
 		}
 
-		logger.Success("Client node registered: %s", req.IP)
+		logger.Success("Client node registered: %s (node ID: %s)", req.IP, clientNode.NodeID)
+		logger.Info("Current stack state: %d/%d nodes registered",
+			stackManager.GetState().CompletedNodes,
+			stackManager.GetState().ExpectedNodes)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 	}
@@ -470,11 +552,6 @@ func parseJobID(output string) string {
 
 // createFlowerStackScript generates a SLURM batch script for Flower stack deployment
 func createFlowerStackScript(req SpinRequest, apiHost, apiPort string) (string, error) {
-	floragoPath, err := utils.GetFloraGoBinDir()
-	if err != nil {
-		return "", err
-	}
-
 	totalNodes := req.NumNodes + 1 // +1 for server node
 
 	script := "#!/bin/bash\n"
@@ -504,8 +581,8 @@ func createFlowerStackScript(req SpinRequest, apiHost, apiPort string) (string, 
 	apiURL := fmt.Sprintf("http://%s:%s", apiHost, apiPort)
 	script += fmt.Sprintf("export FLORAGO_API_SERVER=%s\n\n", apiURL)
 
-	// Get florago binary path
-	script += fmt.Sprintf("FLORAGO_BIN=%s/florago\n\n", floragoPath)
+	// Get florago binary path - it's in $HOME/florago-amd64 (copied by floralab-cli)
+	script += "FLORAGO_BIN=$HOME/florago-amd64\n\n"
 
 	// Launch commands in parallel using srun
 	script += "# Launch server on first node\n"

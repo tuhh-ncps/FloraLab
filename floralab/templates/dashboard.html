@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>FloraLab Dashboard</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script
+            defer
+            src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+        ></script>
+        <style>
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont,
+                    sans-serif;
+                background: linear-gradient(
+                    135deg,
+                    #e0f2f1 0%,
+                    #f3e5f5 50%,
+                    #fff9c4 100%
+                );
+            }
+            .status-dot {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+            .status-running {
+                background-color: #66bb6a;
+            }
+            .status-pending {
+                background-color: #ffa726;
+            }
+            .status-stopped {
+                background-color: #ef5350;
+            }
+            .status-starting {
+                background-color: #42a5f5;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.9);
+                -webkit-backdrop-filter: blur(10px);
+                backdrop-filter: blur(10px);
+                border: 2px solid #333;
+                box-shadow: 4px 4px 0px #333;
+            }
+            .card-pastel-blue {
+                background: linear-gradient(135deg, #b3e5fc 0%, #e1f5fe 100%);
+            }
+            .card-pastel-pink {
+                background: linear-gradient(135deg, #f8bbd0 0%, #fce4ec 100%);
+            }
+            .card-pastel-green {
+                background: linear-gradient(135deg, #c8e6c9 0%, #e8f5e9 100%);
+            }
+            .card-pastel-purple {
+                background: linear-gradient(135deg, #d1c4e9 0%, #ede7f6 100%);
+            }
+            .card-pastel-yellow {
+                background: linear-gradient(135deg, #fff9c4 0%, #fffde7 100%);
+            }
+            .btn-brutal {
+                border: 2px solid #333;
+                box-shadow: 3px 3px 0px #333;
+                transition: all 0.1s ease;
+            }
+            .btn-brutal:hover {
+                box-shadow: 1px 1px 0px #333;
+                transform: translate(2px, 2px);
+            }
+        </style>
+    </head>
+    <body class="min-h-screen p-6 lg:p-8" x-data="dashboard()">
+        <!-- Header -->
+        <div class="card card-pastel-purple p-6 mb-6">
+            <h1 class="text-4xl font-black mb-2 text-gray-900">FLORALAB</h1>
+            <p class="text-sm font-bold text-gray-700">
+                FEDERATED LEARNING MONITORING DASHBOARD
+            </p>
+        </div>
+
+        <!-- Health Status -->
+        <div class="card card-pastel-green p-6 mb-6">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="flex items-center gap-4">
+                    <span class="text-2xl font-black text-gray-900"
+                        >API STATUS</span
+                    >
+                    <span
+                        :class="{'status-dot': true, 'status-running': health.healthy, 'status-stopped': !health.healthy}"
+                    ></span>
+                    <span
+                        x-text="health.healthy ? 'ONLINE' : 'OFFLINE'"
+                        class="font-bold"
+                    ></span>
+                </div>
+                <div
+                    class="text-sm"
+                    x-text="'Last updated: ' + health.timestamp"
+                ></div>
+            </div>
+        </div>
+
+        <!-- Flower Stack Status -->
+        <div class="card card-pastel-blue p-6 mb-6" x-show="stack.job_id">
+            <h2 class="text-2xl font-black mb-4 pb-2 text-gray-900">
+                FLOWER STACK
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                -2 gap-4 mb-4">
+                <div
+                    class="bg-white p-3 border-2 border-gray-900 shadow-[2px_2px_0px_#000]"
+                >
+                    <span class="font-black text-gray-700 text-xs">JOB ID</span>
+                    <div
+                        x-text="stack.job_id"
+                        class="text-lg font-bold text-gray-900 mt-1"
+                    ></div>
+                </div>
+                <div
+                    class="bg-white p-3 border-2 border-gray-900 shadow-[2px_2px_0px_#000]"
+                >
+                    <span class="font-black text-gray-700 text-xs">STATUS</span>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span
+                            x-text="stack.status"
+                            class="text-lg font-bold text-gray-900 uppercase"
+                        ></span>
+                        <span
+                            :class="{
+                        'status-dot': true, 
+                        'status-running': stack.status === 'running',
+                        'status-starting': stack.status === 'starting' || stack.status === 'pending',
+                        'status-stopped': stack.status === 'stopped' || stack.status === 'failed'
+                    }"
+                        ></span>
+                    </div>
+                </div>
+                <div
+                    class="bg-white p-3 border-2 border-gray-900 shadow-[2px_2px_0px_#000]"
+                >
+                    <span class="font-black text-gray-700 text-xs">NODES</span>
+                    <div
+                        x-text="stack.completed_nodes + ' / ' + stack.expected_nodes"
+                        class="text-lg font-bold text-gray-900 mt-1"
+                    ></div>
+                </div>
+                <div
+                    class="bg-white p-3 border-2 border-gray-900 shadow-[2px_2px_0px_#000]"
+                >
+                    <span class="font-black text-gray-700 text-xs"
+                        >CLIENTS</span
+                    >
+                    <div
+                        x-text="Object.keys(stack.client_nodes || {}).length"
+                        class="text-lg font-bold text-gray-900 mt-1"
+                    ></div>
+                </div>
+            </div>
+
+            <!-- Server Node -->
+            <div
+                class="bg-gradient-to-r from-green-100 to-green-50 p-4 border-2 border-gray-900 shadow-[3px_3px_0px_#000] mb-4"
+                x-show="stack.server_node"
+            >
+                <h3 class="font-black mb-3 text-lg text-gray-900">
+                    ◆ SERVER NODE
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div class="bg-white p-2 border border-gray-800 rounded">
+                        <span class="font-black text-gray-600 text-xs block"
+                            >IP</span
+                        >
+                        <span
+                            x-text="stack.server_node?.ip"
+                            class="font-bold text-gray-900"
+                        ></span>
+                    </div>
+                    <div class="bg-white p-2 border border-gray-800 rounded">
+                        <span class="font-black text-gray-600 text-xs block"
+                            >STATUS</span
+                        >
+                        <span
+                            x-text="stack.server_node?.status"
+                            class="font-bold text-gray-900 uppercase"
+                        ></span>
+                    </div>
+                    <div class="bg-white p-2 border border-gray-800 rounded">
+                        <span class="font-black text-gray-600 text-xs block"
+                            >CONTROL PORT</span
+                        >
+                        <span
+                            x-text="stack.server_node?.control_api_port"
+                            class="font-bold text-gray-900"
+                        ></span>
+                    </div>
+                    <div class="bg-white p-2 border border-gray-800 rounded">
+                        <span class="font-black text-gray-600 text-xs block"
+                            >FLEET PORT</span
+                        >
+                        <span
+                            x-text="stack.server_node?.fleet_api_port"
+                            class="font-bold text-gray-900"
+                        ></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Client Nodes -->
+            <div
+                class="bg-gradient-to-r from-blue-100 to-blue-50 p-4 border-2 border-gray-900 shadow-[3px_3px_0px_#000]"
+                x-show="Object.keys(stack.client_nodes || {}).length > 0"
+            >
+                <h3 class="font-black mb-3 text-lg text-gray-900">
+                    ◆ CLIENT NODES
+                </h3>
+                <div
+                    class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"
+                >
+                    <template
+                        x-for="(node, id) in stack.client_nodes"
+                        :key="id"
+                    >
+                        <div
+                            class="bg-white p-3 border-2 border-gray-800 rounded shadow-[2px_2px_0px_#000]"
+                        >
+                            <div class="flex justify-between items-center mb-2">
+                                <span
+                                    x-text="id"
+                                    class="font-black text-sm text-gray-900"
+                                ></span>
+                                <span
+                                    x-text="node.status"
+                                    class="text-xs font-bold uppercase bg-blue-200 px-2 py-1 rounded border border-gray-800"
+                                ></span>
+                            </div>
+                            <div class="text-xs">
+                                <span class="font-bold text-gray-600">IP:</span>
+                                <span
+                                    x-text="node.ip"
+                                    class="ml-1 text-gray-900 font-mono"
+                                ></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- No Stack Running -->
+        <div
+            class="card card-pastel-yellow p-8 text-center"
+            x-show="!stack.job_id && health.healthy"
+        >
+            <p class="text-2xl font-black text-gray-900">
+                NO FLOWER STACK RUNNING
+            </p>
+            <p class="mt-4 text-sm font-bold text-gray-700">
+                Use 'floralab-cli run' to start a federated learning job
+            </p>
+        </div>
+
+        <!-- SLURM Info -->
+        <div class="card card-pastel-pink p-6 mb-6" x-show="slurm.user">
+            <h2 class="text-2xl font-black mb-4 pb-2 text-gray-900">
+                SLURM CLUSTER
+            </h2>
+
+            <div
+                class="mb-4 bg-white p-3 border-2 border-gray-900 rounded shadow-[2px_2px_0px_#000]"
+            >
+                <span class="font-black text-gray-700 text-xs block mb-1"
+                    >USER</span
+                >
+                <span
+                    x-text="slurm.user"
+                    class="font-bold text-gray-900"
+                ></span>
+            </div>
+
+            <div class="mb-4" x-show="slurm.jobs">
+                <span class="font-black text-gray-900 block mb-2">JOBS</span>
+                <pre
+                    x-text="slurm.jobs"
+                    class="text-xs bg-gray-900 text-green-400 p-4 overflow-x-auto rounded border-2 border-gray-900 shadow-[3px_3px_0px_#000] font-mono"
+                ></pre>
+            </div>
+
+            <div x-show="slurm.nodes">
+                <span class="font-black text-gray-900 block mb-2">NODES</span>
+                <pre
+                    x-text="slurm.nodes"
+                    class="text-xs bg-gray-900 text-green-400 p-4 overflow-x-auto rounded border-2 border-gray-900 shadow-[3px_3px_0px_#000] font-mono"
+                ></pre>
+            </div>
+        </div>
+
+        <!-- Auto-refresh indicator -->
+        <div
+            class="card card-pastel-purple px-4 py-3 fixed bottom-6 right-6 shadow-[4px_4px_0px_#000]"
+        >
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-black text-gray-900"
+                    >AUTO-REFRESH</span
+                >
+                <span
+                    x-text="countdown"
+                    class="text-xl font-black text-gray-900"
+                ></span>
+                <span class="text-sm font-black text-gray-900">s</span>
+            </div>
+        </div>
+
+        <script>
+            function dashboard() {
+                return {
+                    health: {
+                        healthy: false,
+                        timestamp: '',
+                    },
+                    stack: {},
+                    slurm: {},
+                    countdown: 5,
+
+                    init() {
+                        this.fetchData();
+                        setInterval(() => {
+                            this.countdown--;
+                            if (this.countdown <= 0) {
+                                this.fetchData();
+                                this.countdown = 5;
+                            }
+                        }, 1000);
+                    },
+
+                    async fetchData() {
+                        try {
+                            // Fetch health
+                            const healthRes = await fetch('/api/health');
+                            if (healthRes.ok) {
+                                const healthData = await healthRes.json();
+                                this.health.healthy =
+                                    healthData.status === 'healthy';
+                                this.health.timestamp = new Date(
+                                    healthData.timestamp
+                                ).toLocaleString();
+                            }
+
+                            // Fetch monitoring data
+                            const monitoringRes = await fetch(
+                                '/api/monitoring'
+                            );
+                            if (monitoringRes.ok) {
+                                const data = await monitoringRes.json();
+                                this.stack = data.flower_stack || {};
+                                this.slurm = data.slurm_info || {};
+                            }
+                        } catch (error) {
+                            console.error('Failed to fetch data:', error);
+                            this.health.healthy = false;
+                        }
+                    },
+                };
+            }
+        </script>
+    </body>
+</html>

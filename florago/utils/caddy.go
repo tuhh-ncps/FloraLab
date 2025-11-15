@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // CaddyInstaller handles Caddy proxy installation
@@ -49,7 +51,7 @@ func (c *CaddyInstaller) InstallCaddy() error {
 
 	// Check if Go is available
 	if _, err := exec.LookPath("go"); err != nil {
-		return fmt.Errorf("Go is not installed or not in PATH - required to build Caddy")
+		return fmt.Errorf("go is not installed or not in PATH - required to build Caddy")
 	}
 
 	// Install xcaddy if not already installed
@@ -94,7 +96,7 @@ func (c *CaddyInstaller) InstallCaddy() error {
 
 	// Verify the binary was created
 	if _, err := os.Stat(caddyPath); err != nil {
-		return fmt.Errorf("Caddy binary not found after build: %w", err)
+		return fmt.Errorf("caddy binary not found after build: %w", err)
 	}
 
 	// Make executable
@@ -121,7 +123,13 @@ func (c *CaddyInstaller) GetCaddyPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(floragoBinDir, "caddy"), nil
+	// Check for caddy first (copied by floralab-cli), then fall back to caddy
+	caddyPath := filepath.Join(floragoBinDir, "caddy")
+	if _, err := os.Stat(caddyPath); err == nil {
+		return caddyPath, nil
+	}
+	// Return default path even if doesn't exist (for build)
+	return caddyPath, nil
 }
 
 // VerifyCaddy checks if Caddy is installed and working
@@ -137,6 +145,70 @@ func (c *CaddyInstaller) VerifyCaddy() bool {
 
 	cmd := exec.Command(caddyPath, "version")
 	return cmd.Run() == nil
+}
+
+// GetCaddyfilePath returns the path to the Caddyfile
+func (c *CaddyInstaller) GetCaddyfilePath() (string, error) {
+	floragoHome, err := GetFloraGoHome()
+	if err != nil {
+		return "", fmt.Errorf("failed to get florago home: %w", err)
+	}
+
+	configDir := filepath.Join(floragoHome, "config")
+	return filepath.Join(configDir, "Caddyfile"), nil
+}
+
+// AddReverseProxy adds a reverse proxy configuration to the Caddyfile
+// It proxies from 0.0.0.0:<localPort> to <targetAddress>:<targetPort>
+func (c *CaddyInstaller) AddReverseProxy(localPort int, targetAddress string, targetPort int) error {
+	caddyfilePath, err := c.GetCaddyfilePath()
+	if err != nil {
+		return fmt.Errorf("failed to get Caddyfile path: %w", err)
+	}
+
+	// Read existing Caddyfile
+	file, err := os.Open(caddyfilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open Caddyfile: %w", err)
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to read Caddyfile: %w", err)
+	}
+
+	// Check if proxy already exists for this port
+	proxyLabel := fmt.Sprintf("# Flower Control API - Port %d", localPort)
+	for _, line := range lines {
+		if strings.Contains(line, proxyLabel) {
+			c.logger.Info("Reverse proxy for port %d already exists", localPort)
+			return nil
+		}
+	}
+
+	// Build the reverse proxy configuration
+	proxyConfig := fmt.Sprintf(`
+%s
+:%d {
+	reverse_proxy %s:%d
+}
+`, proxyLabel, localPort, targetAddress, targetPort)
+
+	// Append to Caddyfile
+	newContent := strings.Join(lines, "\n") + proxyConfig
+
+	if err := WriteFile(caddyfilePath, []byte(newContent)); err != nil {
+		return fmt.Errorf("failed to write Caddyfile: %w", err)
+	}
+
+	c.logger.Success("Added reverse proxy: 0.0.0.0:%d -> %s:%d", localPort, targetAddress, targetPort)
+	return nil
 }
 
 // ReloadCaddy reloads the Caddy configuration
@@ -166,6 +238,27 @@ func (c *CaddyInstaller) ReloadCaddy() error {
 	}
 
 	c.logger.Success("Caddy configuration reloaded")
+	return nil
+}
+
+// ConfigureFlowerControlProxy configures reverse proxy for Flower control API
+// and reloads Caddy
+func (c *CaddyInstaller) ConfigureFlowerControlProxy(controlPort int, superlinkIP string) error {
+	c.logger.Info("Configuring reverse proxy for Flower Control API...")
+	c.logger.Info("  Local: 0.0.0.0:%d", controlPort)
+	c.logger.Info("  Target: %s:%d", superlinkIP, controlPort)
+
+	// Add reverse proxy configuration
+	if err := c.AddReverseProxy(controlPort, superlinkIP, controlPort); err != nil {
+		return fmt.Errorf("failed to add reverse proxy: %w", err)
+	}
+
+	// Reload Caddy to apply changes
+	if err := c.ReloadCaddy(); err != nil {
+		return fmt.Errorf("failed to reload Caddy: %w", err)
+	}
+
+	c.logger.Success("Flower Control API reverse proxy configured and active")
 	return nil
 }
 

@@ -12,7 +12,7 @@ LDFLAGS=-ldflags "-X florago/cmd.version=$(VERSION) -X florago/cmd.commit=$(COMM
 # Build directory
 BUILD_DIR=bin
 
-.PHONY: all build clean test run help build-amd64 build-arm64 build-all debug-build debug-server debug-remote
+.PHONY: all build clean test run help build-amd64 build-arm64 build-all debug-build debug-server debug-remote build-caddy build-delve build-deps
 
 all: build
 
@@ -41,6 +41,45 @@ build-all: build-amd64 build-arm64
 	@echo "  $(BINARY_NAME)-amd64  - For AMD64 (Linux, macOS Intel, Windows via WSL)"
 	@echo "  $(BINARY_NAME)-arm64  - For Apple Silicon (macOS M1/M2/M3)"
 	@ls -lh $(BUILD_DIR)
+
+## build-caddy: Build Caddy for AMD64 Linux
+build-caddy:
+	@echo "Building Caddy for AMD64 Linux..."
+	@mkdir -p $(BUILD_DIR)
+	@if [ ! -f $(BUILD_DIR)/caddy-amd64 ]; then \
+		echo "  Installing xcaddy..."; \
+		GOBIN=$(shell pwd)/$(BUILD_DIR) go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest; \
+		echo "  Building Caddy (this may take a few minutes)..."; \
+		GOOS=linux GOARCH=amd64 $(BUILD_DIR)/xcaddy build --output $(BUILD_DIR)/caddy-amd64; \
+		chmod +x $(BUILD_DIR)/caddy-amd64; \
+		rm -f $(BUILD_DIR)/xcaddy; \
+		echo "✓ Built: $(BUILD_DIR)/caddy-amd64"; \
+	else \
+		echo "✓ Caddy already built: $(BUILD_DIR)/caddy-amd64"; \
+	fi
+
+## build-delve: Build Delve for AMD64 Linux
+build-delve:
+	@echo "Building Delve for AMD64 Linux..."
+	@mkdir -p $(BUILD_DIR)
+	@if [ ! -f $(BUILD_DIR)/dlv-amd64 ]; then \
+		echo "  Cloning Delve repository..."; \
+		rm -rf /tmp/delve-build; \
+		git clone --depth 1 https://github.com/go-delve/delve.git /tmp/delve-build 2>/dev/null || true; \
+		echo "  Building Delve..."; \
+		cd /tmp/delve-build && GOOS=linux GOARCH=amd64 go build -o $(shell pwd)/$(BUILD_DIR)/dlv-amd64 ./cmd/dlv; \
+		chmod +x $(BUILD_DIR)/dlv-amd64; \
+		rm -rf /tmp/delve-build; \
+		echo "✓ Built: $(BUILD_DIR)/dlv-amd64"; \
+	else \
+		echo "✓ Delve already built: $(BUILD_DIR)/dlv-amd64"; \
+	fi
+
+## build-deps: Build all dependencies (Caddy and Delve) for AMD64 Linux
+build-deps: build-caddy build-delve
+	@echo ""
+	@echo "Built dependencies for AMD64 Linux:"
+	@ls -lh $(BUILD_DIR)/caddy-amd64 $(BUILD_DIR)/dlv-amd64 2>/dev/null || true
 
 ## install: Install the binary to $GOPATH/bin
 install:

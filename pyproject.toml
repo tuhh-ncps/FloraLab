@@ -10,6 +10,8 @@ dependencies = [
     "typer>=0.9.0",
     "httpx>=0.27.0",
     "tomli-w>=1.0.0",
+    "fastapi>=0.121.2",
+    "uvicorn>=0.38.0",
 ]
 
 [build-system]
@@ -21,7 +23,16 @@ packages = ["floralab"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "floralab/bin/florago-amd64" = "floralab/bin/florago-amd64"
+"floralab/bin/caddy-amd64" = "floralab/bin/caddy-amd64"
+"floralab/bin/dlv-amd64" = "floralab/bin/dlv-amd64"
+"floralab/templates/dashboard.html" = "floralab/templates/dashboard.html"
 
 [project.scripts]
 # Install a console entry point: `floralab-cli`
 floralab-cli = "floralab.cli:main"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
