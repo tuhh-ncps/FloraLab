@@ -149,11 +149,3 @@ Please see the full text in `LICENSE` for details and contact information.
 ## Contact
 
 Maintainer: `trinh-tnp` (repo owner)
-
----
-
-If you'd like, I can also:
-
-- Expand the CLI command docs with actual flags parsed by `FloraLab/cli.py`.
-- Add a `LICENSE` file (please tell me which license to use).
-- Add a CI workflow that builds the Go tools and runs Python tests on push.
