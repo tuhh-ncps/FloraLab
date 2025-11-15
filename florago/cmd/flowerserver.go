@@ -13,6 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	apiServerURL string
+)
+
 var flowerserverCmd = &cobra.Command{
 	Use:   "flowerserver",
 	Short: "Start Flower server stack (superlink + superexec)",
@@ -32,20 +36,46 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 		serverAppIOAPIPort := getEnvInt("FLOWER_SERVER_APP_IO_API_PORT", 9091)
 		fleetAPIPort := getEnvInt("FLOWER_FLEET_API_PORT", 9092)
 		controlAPIPort := getEnvInt("FLOWER_CONTROL_API_PORT", 9093)
-		apiServerURL := os.Getenv("FLORAGO_API_SERVER")
+
+		// Get API server URL from flag or environment
 		if apiServerURL == "" {
-			logger.Fatal("FLORAGO_API_SERVER environment variable not set")
+			apiServerURL = os.Getenv("FLORAGO_API_SERVER")
 		}
+		if apiServerURL == "" {
+			logger.Fatal("API server URL not specified. Use --api-server flag or FLORAGO_API_SERVER environment variable")
+		}
+
+		logger.Info("API Server: %s", apiServerURL)
+
+		// Get log directory
+		homeDir, _ := os.UserHomeDir()
+		logsDir, _ := utils.GetFloraGoLogsDir()
+		jobID := os.Getenv("SLURM_JOB_ID")
+		if jobID == "" {
+			jobID = "local"
+		}
+		jobLogDir := fmt.Sprintf("%s/%s", logsDir, jobID)
+		os.MkdirAll(jobLogDir, 0755)
 
 		// Start superlink
 		logger.Info("Starting flower-superlink...")
-		homeDir, _ := os.UserHomeDir()
 		superlinkBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-superlink", homeDir)
 		superlinkCmd := exec.Command(
 			superlinkBin,
 			"--insecure",
 			fmt.Sprintf("--grpc-bidi-address=%s:%d", ip, fleetAPIPort),
 		)
+
+		// Redirect superlink output to log file
+		superlinkLogPath := fmt.Sprintf("%s/flower-superlink.log", jobLogDir)
+		superlinkLogFile, err := os.Create(superlinkLogPath)
+		if err != nil {
+			logger.Warning("Failed to create superlink log file: %v", err)
+		} else {
+			superlinkCmd.Stdout = superlinkLogFile
+			superlinkCmd.Stderr = superlinkLogFile
+			logger.Info("Superlink logs: %s", superlinkLogPath)
+		}
 
 		if err := superlinkCmd.Start(); err != nil {
 			logger.Fatal("Failed to start superlink: %v", err)
@@ -64,6 +94,17 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 			"--plugin-type=serverapp",
 			fmt.Sprintf("--grpc-address=%s:%d", ip, serverAppIOAPIPort),
 		)
+
+		// Redirect superexec output to log file
+		superexecLogPath := fmt.Sprintf("%s/flower-superexec-server.log", jobLogDir)
+		superexecLogFile, err := os.Create(superexecLogPath)
+		if err != nil {
+			logger.Warning("Failed to create superexec log file: %v", err)
+		} else {
+			superexecCmd.Stdout = superexecLogFile
+			superexecCmd.Stderr = superexecLogFile
+			logger.Info("Superexec logs: %s", superexecLogPath)
+		}
 
 		if err := superexecCmd.Start(); err != nil {
 			logger.Fatal("Failed to start superexec: %v", err)
@@ -101,13 +142,41 @@ This runs superlink and superexec (serverapp plugin) and registers with the API 
 		logger.Info("Superlink Fleet API: %s:%d", ip, fleetAPIPort)
 		logger.Info("Superexec API: %s:%d", ip, serverAppIOAPIPort)
 
-		// Keep running
-		select {}
+		// Wait for both processes to exit (they should run indefinitely)
+		done := make(chan error, 2)
+
+		go func() {
+			if err := superlinkCmd.Wait(); err != nil {
+				logger.Error("Superlink exited with error: %v", err)
+				done <- err
+			} else {
+				logger.Warning("Superlink exited normally")
+				done <- nil
+			}
+		}()
+
+		go func() {
+			if err := superexecCmd.Wait(); err != nil {
+				logger.Error("Superexec exited with error: %v", err)
+				done <- err
+			} else {
+				logger.Warning("Superexec exited normally")
+				done <- nil
+			}
+		}()
+
+		// Wait for either process to exit
+		exitErr := <-done
+		if exitErr != nil {
+			logger.Fatal("Flower server stack failed: %v", exitErr)
+		}
+		logger.Warning("Flower server stack stopped")
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(flowerserverCmd)
+	flowerserverCmd.Flags().StringVar(&apiServerURL, "api-server", "", "API server URL (can also use FLORAGO_API_SERVER env var)")
 }
 
 func getLocalIP() string {

@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var clientAPIServerURL string
+
 var flowerclientCmd = &cobra.Command{
 	Use:   "flowerclient",
 	Short: "Start Flower client stack (supernode + superexec)",
@@ -29,9 +31,13 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 		nodeID := fmt.Sprintf("client-%s", hostname)
 		ip := getLocalIP()
 
-		apiServerURL := os.Getenv("FLORAGO_API_SERVER")
+		// Check flag first, then environment variable
+		apiServerURL := clientAPIServerURL
 		if apiServerURL == "" {
-			logger.Fatal("FLORAGO_API_SERVER environment variable not set")
+			apiServerURL = os.Getenv("FLORAGO_API_SERVER")
+		}
+		if apiServerURL == "" {
+			logger.Fatal("API server URL not set (use --api-server flag or FLORAGO_API_SERVER environment variable)")
 		}
 
 		// Wait for server node to be ready
@@ -44,17 +50,37 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 		logger.Success("Server node ready at %s", serverNode.IP)
 		logger.Info("Connecting to Fleet API: %s:%d", serverNode.IP, serverNode.FleetAPIPort)
 
+		// Get log directory
+		homeDir, _ := os.UserHomeDir()
+		logsDir, _ := utils.GetFloraGoLogsDir()
+		jobID := os.Getenv("SLURM_JOB_ID")
+		if jobID == "" {
+			jobID = "local"
+		}
+		jobLogDir := fmt.Sprintf("%s/%s", logsDir, jobID)
+		os.MkdirAll(jobLogDir, 0755)
+
 		// Start supernode
 		clientAppIOAPIPort := getEnvInt("FLOWER_CLIENT_APP_IO_API_PORT", 9094)
 
 		logger.Info("Starting flower-supernode...")
-		homeDir, _ := os.UserHomeDir()
 		supernodeBin := fmt.Sprintf("%s/.florago/venv/flowerai-env/bin/flower-supernode", homeDir)
 		supernodeCmd := exec.Command(
 			supernodeBin,
 			"--insecure",
 			fmt.Sprintf("--superlink=%s:%d", serverNode.IP, serverNode.FleetAPIPort),
 		)
+
+		// Redirect supernode output to log file
+		supernodeLogPath := fmt.Sprintf("%s/flower-supernode-%s.log", jobLogDir, hostname)
+		supernodeLogFile, err := os.Create(supernodeLogPath)
+		if err != nil {
+			logger.Warning("Failed to create supernode log file: %v", err)
+		} else {
+			supernodeCmd.Stdout = supernodeLogFile
+			supernodeCmd.Stderr = supernodeLogFile
+			logger.Info("Supernode logs: %s", supernodeLogPath)
+		}
 
 		if err := supernodeCmd.Start(); err != nil {
 			logger.Fatal("Failed to start supernode: %v", err)
@@ -73,6 +99,17 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 			"--plugin-type=clientapp",
 			fmt.Sprintf("--grpc-address=%s:%d", ip, clientAppIOAPIPort),
 		)
+
+		// Redirect superexec output to log file
+		superexecLogPath := fmt.Sprintf("%s/flower-superexec-client-%s.log", jobLogDir, hostname)
+		superexecLogFile, err := os.Create(superexecLogPath)
+		if err != nil {
+			logger.Warning("Failed to create superexec log file: %v", err)
+		} else {
+			superexecCmd.Stdout = superexecLogFile
+			superexecCmd.Stderr = superexecLogFile
+			logger.Info("Superexec logs: %s", superexecLogPath)
+		}
 
 		if err := superexecCmd.Start(); err != nil {
 			logger.Fatal("Failed to start superexec: %v", err)
@@ -108,13 +145,41 @@ This runs supernode and superexec (clientapp plugin) and connects to the server.
 		logger.Info("Supernode connected to: %s:%d", serverNode.IP, serverNode.FleetAPIPort)
 		logger.Info("Superexec API: %s:%d", ip, clientAppIOAPIPort)
 
-		// Keep running
-		select {}
+		// Wait for both processes to exit (they should run indefinitely)
+		done := make(chan error, 2)
+
+		go func() {
+			if err := supernodeCmd.Wait(); err != nil {
+				logger.Error("Supernode exited with error: %v", err)
+				done <- err
+			} else {
+				logger.Warning("Supernode exited normally")
+				done <- nil
+			}
+		}()
+
+		go func() {
+			if err := superexecCmd.Wait(); err != nil {
+				logger.Error("Superexec exited with error: %v", err)
+				done <- err
+			} else {
+				logger.Warning("Superexec exited normally")
+				done <- nil
+			}
+		}()
+
+		// Wait for either process to exit
+		exitErr := <-done
+		if exitErr != nil {
+			logger.Fatal("Flower client stack failed: %v", exitErr)
+		}
+		logger.Warning("Flower client stack stopped")
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(flowerclientCmd)
+	flowerclientCmd.Flags().StringVar(&clientAPIServerURL, "api-server", "", "API server URL (overrides FLORAGO_API_SERVER environment variable)")
 }
 
 func waitForServerNode(apiServerURL string, timeout time.Duration) (*utils.FlowerServerNode, error) {

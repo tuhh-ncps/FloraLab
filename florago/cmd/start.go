@@ -584,17 +584,27 @@ func createFlowerStackScript(req SpinRequest, apiHost, apiPort string) (string, 
 	// Get florago binary path - it's in $HOME/florago-amd64 (copied by floralab-cli)
 	script += "FLORAGO_BIN=$HOME/florago-amd64\n\n"
 
+	// Create job-specific log directory
+	script += "# Create job-specific log directory\n"
+	script += fmt.Sprintf("JOB_LOG_DIR=%s/${SLURM_JOB_ID}\n", logsDir)
+	script += "mkdir -p $JOB_LOG_DIR\n"
+	script += "echo \"Job logs will be written to: $JOB_LOG_DIR\"\n\n"
+
 	// Launch commands in parallel using srun
 	script += "# Launch server on first node\n"
 	script += "srun --nodes=1 --ntasks=1 --nodelist=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n 1) \\\n"
-	script += "  $FLORAGO_BIN flowerserver --api-server $FLORAGO_API_SERVER &\n\n"
+	script += "  $FLORAGO_BIN flowerserver --api-server $FLORAGO_API_SERVER \\\n"
+	script += "  > $JOB_LOG_DIR/flowerserver.log 2>&1 &\n\n"
 
 	script += "# Launch clients on remaining nodes\n"
 	script += "if [ $SLURM_NNODES -gt 1 ]; then\n"
 	script += "  CLIENT_NODES=$(scontrol show hostname $SLURM_JOB_NODELIST | tail -n +2)\n"
+	script += "  CLIENT_INDEX=0\n"
 	script += "  for node in $CLIENT_NODES; do\n"
 	script += "    srun --nodes=1 --ntasks=1 --nodelist=$node \\\n"
-	script += "      $FLORAGO_BIN flowerclient --api-server $FLORAGO_API_SERVER &\n"
+	script += "      $FLORAGO_BIN flowerclient --api-server $FLORAGO_API_SERVER \\\n"
+	script += "      > $JOB_LOG_DIR/flowerclient-${CLIENT_INDEX}.log 2>&1 &\n"
+	script += "    CLIENT_INDEX=$((CLIENT_INDEX + 1))\n"
 	script += "  done\n"
 	script += "fi\n\n"
 
