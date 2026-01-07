@@ -138,14 +138,3 @@ Please include tests for new features and follow the repository style.
 ## License
 
 This project is proprietary. A `LICENSE` file is included in the repository root that describes the terms under which the software may be used.
-
-Short summary:
-
-- Copyright (c) 2025 `trinh-tnp` — All Rights Reserved.
-- No rights to use, copy, modify, distribute, sublicense, or create derivative works are granted except under a separate, written license agreement with the copyright holder.
-
-Please see the full text in `LICENSE` for details and contact information.
-
-## Contact
-
-Maintainer: `trinh-tnp` (repo owner)
